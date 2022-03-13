@@ -43,7 +43,7 @@ void page_table_update_helper(uint64_t* pt, uint64_t vpn, uint64_t ppn, int leve
 		return;
 	}
 	uint64_t pte = pt[vpn_part]; // get the pte by the vpn_part
-	if (pte & VALID_BIT_MASK == 0) {  // check if pte is valid
+	if ((pte & VALID_BIT_MASK) == 0) {  // check if pte is valid
 		if (ppn == NO_MAPPING)
 			return; // pte is not valid and ppn equal to NO_MAPPING, nothing to do
 		pte = (alloc_page_frame() << OFFSET_SIZE) + VALID_BIT_MASK; // allocate new page frame for pte and make it valid
@@ -74,7 +74,7 @@ uint64_t page_table_query_helper(uint64_t* pt, uint64_t vpn, int level)
 {
 	uint64_t vpn_part = (vpn >> (BITS_PER_LEVEL*(NUM_OF_LEVELS-1-level))) & VPN_PART_MASK; // get the VPN part in this spesific level
 	uint64_t pte = pt[vpn_part]; // get the pte by the vpn_part
-	if (pte & VALID_BIT_MASK == 0) // check if pte is valid
+	if ((pte & VALID_BIT_MASK) == 0) // check if pte is valid
 		return NO_MAPPING;
 	if (level == NUM_OF_LEVELS - 1) // reache to the last table page
 		return pte >> OFFSET_SIZE;
