@@ -106,7 +106,7 @@ uint64_t page_table_update_helper(uint64_t* pt_node, uint64_t vpn, uint64_t ppn,
 		pt_node[vpn_part] = pte; // set the new pte in the page table
 	}
 	pt_node = phys_to_virt(pte - VALID_BIT_MASK); // get va for the next page table (of level+1)
-	page_table_update_helper(pt_node, vpn, ppn, level + 1);
+	return page_table_update_helper(pt_node, vpn, ppn, level + 1);
 }
 
 /*
