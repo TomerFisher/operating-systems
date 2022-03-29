@@ -11,7 +11,14 @@ int process_arglist(int count, char** arglist);
 
 // prepare and finalize calls for initialization and destruction of anything required
 int prepare(void)
+{
+	return 0;
+}
+
 int finalize(void)
+{
+	return 0;
+}
 
 int main(void)
 {
