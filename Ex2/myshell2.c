@@ -9,6 +9,17 @@
 #include <sys/wait.h>
 #include <signal.h>
 
+void ignore_sigchld()
+{
+	struct sigaction sa;
+	sa.sa_handler = SIG_IGN;
+	sa.sa_flags = 0;
+	if (sigaction(SIGCHLD, &sa, NULL) < 0) {
+		fprintf(stderr, "(Sigaction Failed) ERROR: %s\n", strerror(errno));
+		exit(1);
+	}
+}
+
 void ignore_sigint()
 {
 	struct sigaction sa;
@@ -192,6 +203,8 @@ int prepare(void)
 {
 	// ignore SIGINT on parent shell
 	ignore_sigint();
+	// ignore SIGCHLD to prevent zombie process
+	ignore_sigchld();
 	return 0;
 }
 
