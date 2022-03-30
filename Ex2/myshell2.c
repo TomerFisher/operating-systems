@@ -14,7 +14,10 @@ void ignore_sigint()
 	struct sigaction sa;
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = 0;
-	sigaction(SIGINT, &sa, NULL);
+	if (sigaction(SIGINT, &sa, NULL) < 0) {
+		fprintf(stderr, "(Sigaction Failed) ERROR: %s\n", strerror(errno));
+		exit(1);
+	}
 }
 
 void unignore_sigint()
@@ -22,7 +25,10 @@ void unignore_sigint()
 	struct sigaction sa;
 	sa.sa_handler = SIG_DFL;
 	sa.sa_flags = 0;
-	sigaction(SIGINT, &sa, NULL);
+	if (sigaction(SIGINT, &sa, NULL) < 0) {
+		fprintf(stderr, "(Sigaction Failed) ERROR: %s\n", strerror(errno));
+		exit(1);
+	}
 }
 
 int process_arglist(int count, char** arglist)
@@ -191,6 +197,5 @@ int prepare(void)
 
 int finalize(void)
 {
-	unignore_sigint();
 	return 0;
 }
