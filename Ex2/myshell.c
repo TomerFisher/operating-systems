@@ -5,9 +5,12 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
-int isBackground(int count, char** arglist)
+int is_background(int count, char** arglist)
 {
+	printf("lala");
 	if (count > 1 && strcmp(arglist[count-1], "&") == 0) {
 		arglist[count-1] = NULL;
 		return 1;
@@ -15,7 +18,7 @@ int isBackground(int count, char** arglist)
 	return 0;
 }
 
-int isOutputRedirection(int count, char** arglist)
+int is_output_redirection(int count, char** arglist)
 {
 	if (count > 2 && strcmp(arglist[count-2], ">>") == 0) {
 		arglist[count-2] = NULL;
@@ -24,91 +27,166 @@ int isOutputRedirection(int count, char** arglist)
 	return 0;
 }
 
-int isPiping(int count, char** arglist, int* pipe_index)
+int is_piping(int count, char** arglist, int* pipe_index)
 {
 	for (int index = 1; index < count-1; index++){
 		if (strcmp(arglist[index], "|") == 0) {
 			arglist[index] = NULL;
-			pipe_index = index;
+			pipe_index = &index;
 			return 1;
 		}
 	}
 	return 0;
 }
 
+int regular_command(char** arglist)
+{
+	int pid;
+	pid = fork();
+	if (pid < 0) { // fork failed
+		fprintf(stderr, "ERROR: %s\n", strerror(errno));
+		return 1;
+	}
+	else if (pid == 0) { // child's process
+		if (execvp(arglist[0], arglist) < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit(1);
+		}
+	}
+	else { // parent's process
+		if (waitpid(pid, 0 , 0) < 0 ) {
+			//TODO
+		}
+	}
+	return 1;
+}
+
+int background_command(char** arglist)
+{
+	int pid;
+	pid = fork();
+	if (pid < 0) { // fork failed
+		fprintf(stderr, "ERROR: %s\n", strerror(errno));
+		return 1;
+	}
+	else if (pid == 0) { // child's process
+		if (execvp(arglist[0], arglist) < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit(1);
+		}
+	}
+	else { // parent's process
+	}
+	return 1;
+}
+
+int output_redirection_command(int count, char** arglist) {
+	int pid, output_file;
+	pid = fork();
+	if (pid < 0) { // fork failed
+		fprintf(stderr, "ERROR: %s\n", strerror(errno));
+		return 1;
+	}
+	else if (pid == 0) { // child's process
+		printf("1");
+		output_file = open(arglist[count-1], O_CREAT | O_WRONLY | O_APPEND, 0644);
+		printf("2");
+		if (output_file < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit(1);
+		}
+		if (dup2(output_file,1) < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit(1);
+		}
+		if (execvp(arglist[0], arglist) < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit(1);
+		}
+	}
+	else { // parent's process
+	    if (waitpid(pid, 0 , 0) < 0 ) {
+			//TODO
+		}
+	}
+	return 1;
+}
+
+int piping_command(char** arglist, int pipe_index)
+{
+	int p[2], pid1, pid2;
+	if (pipe(p) < 0) {
+		fprintf(stderr, "ERROR: %s\n", strerror(errno));
+		return 1;
+	}
+	pid1 = fork();
+	if (pid1 < 0) { // fork failed
+		fprintf(stderr, "ERROR: %s\n", strerror(errno));
+		return 1;
+	}
+	else if (pid1 == 0) { // child's process
+	    if (dup2(p[1], 1) < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit(1);
+		}
+		if (execvp(arglist[0], arglist) < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit(1);
+		}
+	}
+	else { // parent's process
+		pid2 = fork();
+		if (pid2 < 0) { // fork failed
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			return 1;
+		}
+		else if (pid2 == 0) { // child's process
+			if (dup2(p[0], 0) < 0) {
+				fprintf(stderr, "ERROR: %s\n", strerror(errno));
+				exit(1);
+			}
+			if (execvp(arglist[pipe_index+1], arglist) < 0) {
+				fprintf(stderr, "ERROR: %s\n", strerror(errno));
+				exit(1);
+			}
+		}
+		else { // parent's process
+			if (waitpid(pid1, 0 , 0) < 0 || waitpid(pid2, 0 , 0) < 0) {
+			//TODO
+			}
+		}
+	}
+	return 1;
+}
+
 int process_arglist(int count, char** arglist)
 {
-	int backgroundFlag, outputRedirectionFlag, pipingFlag, pipe_index;
+	printf("start process_arglist\n");
+	int backgroundFlag, outputRedirectionFlag, pipingFlag, pipe_index = 0;
 	
 	// check is the command is regular, background, output redirection or piping
-	backgroundFlag = isBackground(count, arglist);
-	outputRedirectionFlag = isOutputRedirection(count, arglist);
-	pipingFlag = isPiping(count, arglist, &pipe_index);
-	
-	
-	int pid, status_code, pipe_index, new_pid;
-	int background = 0, output_redirection = 0, piping = 0;
-	
-	// check if there is '&' in arglist
-	if (count > 1 && strcmp(arglist[count-1], "&") == 0) {
-		background = 1;
-		arglist[count-1] = NULL;
-	}
+	backgroundFlag = is_background(count, arglist);
+	printf("1");
+	outputRedirectionFlag = is_output_redirection(count, arglist);
+	printf("2");
+	pipingFlag = is_piping(count, arglist, &pipe_index);
+	printf("3");
 
-	// check if there is '>>' in arglist
-	else if (count > 2 && strcmp(arglist[count-2], ">>") == 0) {
-		output_redirection = 1;
-		arglist[count-2] = NULL;
+	printf("backgroundFlag: %d\n", backgroundFlag);
+	printf("outputRedirectionFlag: %d\n", outputRedirectionFlag);
+	printf("pipingFlag: %d\n", pipingFlag);
+	
+	if (backgroundFlag == 1) {
+		background_command(arglist);
 	}
-
-	// check is there is '|' in arglist
-	else if (count > 2) {
-		for (int index = 1; index < count-1; index++){
-			if (strcmp(arglist[index], "|") == 0) {
-				piping = 1;
-				arglist[index] = NULL;
-				pipe_index = index;
-				break;
-			}
-		}
+	if (outputRedirectionFlag == 1) {
+		output_redirection_command(count, arglist);
 	}
-	pid = fork();
-	if (pid == 0){
-		if (output_redirection == 1) {
-			printf("#this command have output redirection\n");
-			int file_desc = open(arglist[count-1], O_CREAT | O_WRONLY | O_APPEND, 0644);
-			dup2(file_desc, 1);
-			status_code = execvp(arglist[0], arglist);
-		}
-		else if (piping == 1){
-			printf("#this command have pipe\n");
-			int p[2];
-			pipe(p);
-			new_pid = fork();
-			if (new_pid > 0) {
-				dup2(p[1], 1);
-				status_code = execvp(arglist[0], arglist);
-			}
-			else {
-				//waitpid(new_pid);
-				dup2(p[0], 0);
-				status_code = execvp(arglist[pipe_index+1], &arglist[pipe_index+1]);
-			}
-		}
-		else {
-			status_code = execvp(arglist[0], arglist);
-		}
+	if (pipingFlag == 1) {
+		piping_command(arglist, pipe_index);
 	}
-	else {
-		if (background == 0) {
-			printf("#this regular command\n");
-			if (piping == 1){
-				waitpid(new_pid);
-			}
-			waitpid(pid);
-		}
-		else
-			printf("#this backgroup command\n");
+	if (backgroundFlag == 0 && outputRedirectionFlag == 0 && pipingFlag == 0) {
+		regular_command(arglist);
 	}
 	return 1;
 }
