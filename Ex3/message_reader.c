@@ -22,11 +22,11 @@ int main(int argc, char** argv)
 	  exit(1);
   }
   channel_id = atoi(argv[2]);
-  if (ioctl(file_desc, MSG_SLOT_CHANNEL, channel_id) != SUCCESS) {
+  if (ioctl(file_descriptor, MSG_SLOT_CHANNEL, channel_id) != SUCCESS) {
 	  perror("Error: ioctl failed");
 	  exit(1);
   }
-  message_length = read(file_desc, buffer, BUF_LEN);
+  message_length = read(file_descriptor, buffer, BUF_LEN);
   if (message_length < 0) {
 	  perror("Error: read failed");
 	  exit(1);

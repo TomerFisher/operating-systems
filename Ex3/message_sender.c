@@ -21,12 +21,12 @@ int main(int argc, char** argv)
 	  exit(1);
   }
   channel_id = atoi(argv[2]);
-  if (ioctl(file_desc, MSG_SLOT_CHANNEL, channel_id) != SUCCESS) {
+  if (ioctl(file_descriptor, MSG_SLOT_CHANNEL, channel_id) != SUCCESS) {
 	  perror("Error: ioctl failed");
 	  exit(1);
   }
   message_length = strlen(argv[3]);
-  if (write(file_desc, argv[3], message_length) != message_length) {
+  if (write(file_descriptor, argv[3], message_length) != message_length) {
 	  perror("Error: write failed");
 	  exit(1);
   }

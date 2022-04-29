@@ -15,5 +15,6 @@
 #define DEVICE_RANGE_NAME "message_slot"
 #define BUF_LEN 128
 #define SUCCESS 0
+#define FAILURE -1
 
 #endif
