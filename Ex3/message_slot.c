@@ -39,26 +39,26 @@ struct channel_node* message_slot_channels[256];
 static char the_message[BUF_LEN];
 
 //================== DEVICE FUNCTIONS ===========================
-static int device_open( struct inode* inode, struct file* file)
+static int device_open(struct inode* inode, struct file* file)
 {
   int minor = iminor(inode);
   struct file_info* info = kmalloc(sizeof(struct file_info), GFP_KERNEL);
-  printk("Invoking device_open: file=%p, inode=%p, minor=%d.\n", file, inode, minor);
+  printk("Invoking device_open(%p)\n", file);
   if (info == NULL) {
 	  return FAILURE;
   }
   info->minor = minor;
   info->channel_id = 0;
-  info->channel = NULL;
+  //info->channel = NULL;
   file->private_data = (void*)info;
-  printk("Device Open Successfully Completed.");
+  printk("device_open(%p) successfully completed\n", file);
   return SUCCESS;
 }
 
 static int device_release(struct inode* inode, struct file*  file) {
-	printk("Invoking device_release: file=%p, inode=%p.\n", file, inode);
+	printk("Invoking device_release(%p,%p)\n", inode, file);
   kfree(file->private_data);
-  printk("Device Release Successfully Completed.");
+  printk("device_release(%p,%p) successfully completed\n", inode, file);
 	return SUCCESS;
 }
 
@@ -67,27 +67,20 @@ static ssize_t device_read( struct file* file, char __user* buffer, size_t lengt
   int i, message_length;
   struct file_info* info = (struct file_info*)(file->private_data);
   char* last_message;
-  printk("Invoking device_read: file=%p, length=%ld.\n", file, length);
-  if (info->channel_id == 0) {
-	  printk("channel_id == 0\n");
+  printk("Invoking device_read(%p,%ld)\n", file, length);
+  if (info->channel_id == 0)
     return -EINVAL;
-  }
   last_message = info->channel->message;
   message_length = info->channel->message_length;
-  if (message_length == 0) {
-	  printk("message_length == 0\n");
+  if (message_length == 0)
     return -EWOULDBLOCK;
-  }
-  if (length < message_length) {
-	  printk("message too long\n");
+  if (length < message_length)
     return -ENOSPC;
-  }
   for (i = 0; i < message_length; i++) {
 	  if (put_user(last_message[i], buffer + i) != 0)
 		  return FAILURE;
   }
-  printk("The Message: %s\n", last_message);
-  printk("Device Read Successfully Completed.");
+  printk("device_read(%p,%ld) successfully completed (last written - %s)\n", file, length, last_message);
   return info->channel->message_length;
 }
 
@@ -95,7 +88,7 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
 {
   int i=0;
   struct file_info* info = (struct file_info*)(file->private_data);
-  printk("Invoking device_write: file=%p, length=%ld.\n", file, length);
+  printk("Invoking device_write(%p,%ld)\n", file, length);
   if(info->channel_id == 0) {
 	  return -EINVAL;
   }
@@ -111,31 +104,51 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
 	  info->channel->message[i] = the_message[i];
   }
   info->channel->message_length = length;
-  printk("Device Write Successfully Completed.");
+  printk("device_write(%p,%ld) successfully completed\n", file, length);
   return length;
 }
 
 static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsigned long channel_id)
 {
   struct file_info* info = (struct file_info*)(file->private_data);
-  struct channel_node* node = message_slot_channels[info->minor-1];
-  printk("Invoking device_ioctl: file=%p, channel-id=%ld\n", file, channel_id);
+  struct channel_node* head = message_slot_channels[info->minor-1];
+  struct channel_node* node;
+  printk("Invoking device_ioctl(%p,%ld)\n", file, channel_id);
   if (MSG_SLOT_CHANNEL != ioctl_command_id || channel_id == 0)
     return -EINVAL;
-  while (node != NULL) {
+  if (message_slot_channels[info->minor-1] == NULL) {
+    node = kmalloc(sizeof(struct channel_node), GFP_KERNEL);
+    node->id = channel_id;
+    node->message_length = 0;
+    node->next = NULL;
+    info->channel_id = channel_id;
+    info->channel = node;
+    message_slot_channels[info->minor-1] = node;
+    printk("device_ioctl(%p,%ld) successfully completed - create new channel node\n", file, channel_id);
+    return SUCCESS;
+  }
+  node = head;
+  while (node->next != NULL) {
 	  if (node->id == channel_id) {
 		  info->channel_id = channel_id;
       info->channel = node;
+      printk("device_ioctl(%p,%ld) successfully completed - found channel node\n", file, channel_id);
 		  return SUCCESS;
 	  }
 	  node = node->next;
   }
-  node = kmalloc(sizeof(struct channel_node), GFP_KERNEL);
-  node->id = channel_id;
-  node->message_length = 0;
+  if (node->id == channel_id) {
+	  info->channel_id = channel_id;
+    info->channel = node;
+    printk("device_ioctl(%p,%ld) successfully completed - found channel node\n", file, channel_id);
+	  return SUCCESS;
+  }
+  node->next = kmalloc(sizeof(struct channel_node), GFP_KERNEL);
+  node->next->id = channel_id;
+  node->next->message_length = 0;
   info->channel_id = channel_id;
-  info->channel = node;
-  printk("Device Ioctl Successfully Completed.");
+  info->channel = node->next;
+  printk("device_ioctl(%p,%ld) successfully completed - create new channel node\n", file, channel_id);
   return SUCCESS;
 }
 
