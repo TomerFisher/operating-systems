@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <thread.h>
 #include <linux/limits.h>
 #include <errno.h>
 #include <dirent.h>
@@ -10,7 +11,7 @@
 #include <unistd.h>
 
 struct directory_node {
-	char *path;
+	char path[PATH_MAX];
 	struct directory_node *next;
 };
 
@@ -22,9 +23,11 @@ struct directory_queue {
 // global locks and conds
 pthread_mutex_t queue_lock;
 pthread_mutex_t initialize_thread_lock;
+pthread_mutex_t start_threads_lock;
 pthread_mutex_t increase_total_match_search_term_lock;
 pthread_mutex_t increase_total_waiting_threads_lock;
 pthread_cond_t all_threads_initialized;
+pthread_cond_t start_threads;
 pthread_cond_t not_empty;
 
 // global variables
@@ -65,11 +68,11 @@ struct directory_node* remove_from_queue(struct directory_queue *dir_queue) {
 void enqueue(struct directories_queue *dir_queue, struct directory_node *dir_node) {
 	pthread_mutex_lock(&queue_lock);
 	add_to_queue(dir_queue, dir_node);
-	pthread_mutex_signal(&not_empty);
+	pthread_cond_signal(&not_empty);
 	pthread_mutex_unlock(&queue_lock);
 }
 
-int searching_in_directory(char *path) {
+void searching_in_directory(char *path) {
 	char *full_path;
 	struct dirent *current_dirent;
 	struct directory_node *dir_node;
@@ -77,7 +80,7 @@ int searching_in_directory(char *path) {
 	DIR *dir = opendir(path);
 	if (dir == NULL) {
 		printf(stderr, "Directory %s: Permission denied.\n", path);
-		return -1;
+		return;
 	}
 	current_dirent = readdir(dir);
 	while(current_dirent != NULL) {
@@ -88,20 +91,20 @@ int searching_in_directory(char *path) {
 			exit(1);
 		}
 		if(S_ISDIR(statbuf.st_mode)) {
-			if(strcmp(current_dirent->d_name, ".") || strcmp(current_dirent->d_name, ".."))
-				return 0;
-			else if(opendir(full_path) == NULL) {
-				printf(stderr, "Directory %s: Permission denied.\n", path);
-				exit(1);
+			if(!strcmp(current_dirent->d_name, ".") && !strcmp(current_dirent->d_name, "..")) {
+				if(opendir(full_path) == NULL) {
+					printf(stderr, "Directory %s: Permission denied.\n", path);
+					exit(1);
+				}
+				dir_node = malloc(sizeof(struct directory_node));
+				if (dir_node == NULL) {
+					printf(stderr, "malloc for root directory node failed\n");
+					exit(1);
+				}
+				strcpy(dir_node->path, full_path);
+				dir_node->next = NULL;
+				enqueue(dir_queue, dir_node);
 			}
-			dir_node = malloc(sizeof(struct directory_node));
-			if (dir_node == NULL) {
-				printf(stderr, "malloc for root directory node failed\n");
-				exit(1);
-			}
-			strcpy(dir_node->path, full_path);
-			dir_node->next = NULL;
-			enqueue(dir_queue, dir_node);
 		}
 		else if(strstr(current_dirent->d_name, search_term)) {
 			pthread_mutex_lock(&increase_total_match_search_term_lock);
@@ -116,16 +119,18 @@ void thread_func() {
 	struct directory_node *dir_node;
 	pthread_mutex_lock(&initialize_thread_lock);
 	total_initialized_threads++;
+	printf("total_initialized_threads: %d\n", total_initialized_threads);
 	if(total_initialized_threads == total_threads) {
 		pthread_cond_broadcast(&all_threads_initialized);
 	}
-	else {
-		pthread_cond_wait(&all_threads_initialized, &initialize_thread_lock);
-	}
+	pthread_cond_wait(&start_threads, &initialize_thread_lock);
 	pthread_mutex_unlock(&initialize_thread_lock);
+	printf("thread start working\n");
 	while(1) {
+		
 		pthread_mutex_lock(&queue_lock);
 		if(dir_queue->head != NULL) {
+			printf("thread got dir from the queue\n");
 			dir_node = remove_from_queue(dir_queue);
 			pthread_mutex_unlock(&queue_lock);
 			searching_in_directory(dir_node->path);
@@ -134,6 +139,7 @@ void thread_func() {
 		else {
 			pthread_mutex_lock(&increase_total_waiting_threads_lock);
 			total_waiting_threads++;
+			printf("thread in waiting status");
 			pthread_mutex_unlock(&increase_total_waiting_threads_lock);
 			if(total_waiting_threads == total_threads) {
 				// exit all threads.
@@ -148,6 +154,7 @@ void thread_func() {
 int initialize_threads(pthread_t* threads, int total_threads) {
 	int i, rc;
     for (i = 0; i < total_threads; i++) {
+		printf("create thread %d\n", i);
         rc = thrd_create(&threads[i], thread_func, (void *)i);
         if (rc) {
             fprintf(stderr, "Failed creating thread\n");
@@ -159,18 +166,22 @@ int initialize_threads(pthread_t* threads, int total_threads) {
 void initialize_locks_and_conds() {
 	pthread_mutex_init(&queue_lock, NULL);
 	pthread_mutex_init(&initialize_thread_lock, NULL);
+	pthread_mutex_init(&start_threads_lock, NULL);
 	pthread_mutex_init(&increase_total_match_search_term_lock, NULL);
 	pthread_mutex_init(&increase_total_waiting_threads_lock, NULL);
 	pthread_cond_init(&all_threads_initialized, NULL);
+	pthread_cond_init(&start_threads, NULL);
 	pthread_cond_init(&not_empty, NULL);
 }
 
 void destroy_locks_and_conds() {
 	pthread_mutex_destroy(&queue_lock);
 	pthread_mutex_destroy(&initialize_thread_lock);
+	pthread_mutex_destroy(&start_threads_lock);
 	pthread_mutex_destroy(&increase_total_match_search_term_lock);
 	pthread_mutex_destroy(&increase_total_waiting_threads_lock);
 	pthread_cond_destroy(&all_threads_initialized);
+	pthread_cond_destroy(&start_threads);
 	pthread_cond_destroy(&not_empty);
 }
 
@@ -208,32 +219,30 @@ int main(int argc, char *argv[]) {
 	}
 	search_term = argv[2];
     total_threads = atoi(argv[3]);
-
+	printf("finish command line arguments validation\n");
 	//FIFO queue creation
 	initialize_fifo_queue(root_dir_path);
-	
+	printf("finish init fifo queue\n");
 	//locks and conditions creation
 	initialize_locks_and_conds();
-	
+	printf("finish init locks and conds\n");
 	//initialize all threads
+	pthread_mutex_lock(&initialize_thread_lock);
 	pthread_t threads[total_threads];
 	initialize_threads(threads, total_threads);
-	
+	pthread_cond_wait(&all_threads_initialized, &initialize_thread_lock);
+	pthread_mutex_unlock(&initialize_thread_lock);
+	printf("finish init threads\n");
 	//waiting for all threads to be ready and then start the searching
-	
-	
 	//waiting for all threads to finish
 	for (i = 0; i < total_threads; i++) {
         pthread_join(threads[i], NULL);
     }
     printf("Done searching, found %d files\n", total_match_search_term);
-	
 	//locks and conditions destroying
 	destroy_locks_and_conds();
-	
 	//free the queue
 	free(dir_queue);
-	
 	if(total_error_threads > 0)
 		exit(1);
 	exit(0);
