@@ -71,50 +71,45 @@ int searching_in_directory(char *path) {
 	struct stat statbuf;
 	DIR *dir = opendir(path);
 	if (dir == NULL) {
-		fprintf(stderr, "1)opendir for %s failed\n", path);
+		fprintf(stderr, "opendir for %s failed\n", path);
 		return -1;
 	}
 	//check all dir entries 
 	while((current_dirent = readdir(dir)) != NULL) {
 		sprintf(full_path, "%s/%s", path, current_dirent->d_name);
-		if (stat(full_path, &statbuf) != 0) {
+		if (lstat(full_path, &statbuf) != 0) {
 			fprintf(stderr, "stat for %s failed\n", full_path);
+			return -1;
 		}
-		else {
-			if(S_ISDIR(statbuf.st_mode)) {
-				if((strcmp(current_dirent->d_name, ".") != 0) && (strcmp(current_dirent->d_name, "..") != 0)) {
-					if(opendir(full_path) == NULL) {
-						if (errno == EACCES)
-							fprintf(stderr, "Directory %s: Permission denied.\n", full_path);
-						else {
-							fprintf(stderr, "opendir for %s failed\n", full_path);
-							return -1;
-						}
+		if(S_ISDIR(statbuf.st_mode)) {
+			if((strcmp(current_dirent->d_name, ".") != 0) && (strcmp(current_dirent->d_name, "..") != 0)) {
+				//check if the dir have read and execute permissions
+				if(!(statbuf.st_mode & S_IXUSR) || !(statbuf.st_mode & S_IRUSR)) {
+					printf("Directory %s: Permission denied.\n", full_path);
+				}
+				else {
+					//create new directory and add to the queue
+					dir_node = malloc(sizeof(struct directory_node));
+					if(dir_node == NULL) {
+						fprintf(stderr, "malloc for root directory node failed\n");
+						return -1;
 					}
-					else {
-						//create new directory and add to the queue
-						dir_node = malloc(sizeof(struct directory_node));
-						if(dir_node == NULL) {
-							fprintf(stderr, "malloc for root directory node failed\n");
-							return -1;
-						}
-						strcpy(dir_node->path, full_path);
-						dir_node->next = NULL;
-						mtx_lock(&queue_lock);
-						add_to_queue(dir_queue, dir_node);
-						cnd_signal(&queue_not_empty);
-						mtx_unlock(&queue_lock);
-					}
+					strcpy(dir_node->path, full_path);
+					dir_node->next = NULL;
+					mtx_lock(&queue_lock);
+					add_to_queue(dir_queue, dir_node);
+					cnd_signal(&queue_not_empty);
+					mtx_unlock(&queue_lock);
 				}
 			}
-			else {
-				//check if the file contain the serch term
-				if(strstr(current_dirent->d_name, search_term) != NULL) {
-					mtx_lock(&incr_total_match_search_term_lock);
-					total_match_search_term++;
-					mtx_unlock(&incr_total_match_search_term_lock);
-					printf("%s\n", full_path);
-				}
+		}
+		else {
+			//check if the file contain the serch term
+			if(strstr(current_dirent->d_name, search_term) != NULL) {
+				mtx_lock(&incr_total_match_search_term_lock);
+				total_match_search_term++;
+				mtx_unlock(&incr_total_match_search_term_lock);
+				printf("%s\n", full_path);
 			}
 		}
 	}
