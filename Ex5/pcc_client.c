@@ -9,75 +9,73 @@
 #include <errno.h>
 #include <arpa/inet.h>
 #include <errno.h>
-
-// MINIMAL ERROR HANDLING FOR EASE OF READING
+#include <fcntl.h>
+#include <sys/stat.h>
 
 int main(int argc, char *argv[])
 {
-  int  sockfd     = -1;
-  int  bytes_read =  0;
-  char recv_buff[1024];
-
-  struct sockaddr_in serv_addr; // where we Want to get to
-  struct sockaddr_in my_addr;   // where we actually connected through 
-  struct sockaddr_in peer_addr; // where we actually connected to
-  socklen_t addrsize = sizeof(struct sockaddr_in );
-
-  memset(recv_buff, 0,sizeof(recv_buff));
-  if( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-  {
-    printf("\n Error : Could not create socket \n");
-    return 1;
+  int fd, sockfd, byte_index, buffer_size = 1024;
+  uint64_t file_size, file_size_net, num_printable_characters, num_printable_characters_net;
+  char send_buff[1024];
+  struct stat st;
+  struct sockaddr_in serv_addr;
+  //validate that the correct number of command line arguments id passed
+  if(argc != 3) {
+    errno = EINVAL;
+    perror("Error");
+    exit(1);
   }
-
-  // print socket details
-  getsockname(sockfd,
-              (struct sockaddr*) &my_addr,
-              &addrsize);
-  printf("Client: socket created %s:%d\n",
-         inet_ntoa((my_addr.sin_addr)),
-         ntohs(my_addr.sin_port));
-
+  //validate that the file exists and readable
+  fd = open(argv[3], O_RDONLY);
+  if (fd < 0) {
+    perror("Error");
+    exit(1);
+  }
+  //create socket
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0) {
+    perror("Error");
+    exit(1);
+  }
+  //ser server details
   memset(&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(10000); // Note: htons for endiannes
-  serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); // hardcoded...
-
-  printf("Client: connecting...\n");
-  // Note: what about the client port number?
-  // connect socket to the target address
-  if( connect(sockfd,
-              (struct sockaddr*) &serv_addr,
-              sizeof(serv_addr)) < 0)
-  {
-    printf("\n Error : Connect Failed. %s \n", strerror(errno));
-    return 1;
+  serv_addr.sin_port = htons(atoi(argv[2]));
+  serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
+  //connect socket to the target address
+  if(connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
+    perror("Error");
+    exit(1);
   }
-
-  // print socket details again
-  getsockname(sockfd, (struct sockaddr*) &my_addr,   &addrsize);
-  getpeername(sockfd, (struct sockaddr*) &peer_addr, &addrsize);
-  printf("Client: Connected. \n"
-         "\t\tSource IP: %s Source Port: %d\n"
-         "\t\tTarget IP: %s Target Port: %d\n",
-         inet_ntoa((my_addr.sin_addr)),    ntohs(my_addr.sin_port),
-         inet_ntoa((peer_addr.sin_addr)),  ntohs(peer_addr.sin_port));
-
-  // read data from server into recv_buff
-  // block until there's something to read
-  // print data to screen every time
-  while( 1 )
-  {
-    bytes_read = read(sockfd,
-                      recv_buff,
-                      sizeof(recv_buff) - 1);
-    if( bytes_read <= 0 )
-      break;
-    recv_buff[bytes_read] = '\0';
-    puts( recv_buff );
+  //get file's size
+  fstat(fd, &st);
+  file_size = st.st_size;
+  //write file's size to the server
+  file_size_net = htonl(file_size);
+  if(write(sockfd, &file_size_net, sizeof(uint64_t)) < 0) {
+    perror("Error");
+    exit(1);
   }
-
-  close(sockfd); // is socket really done here?
-  //printf("Write after close returns %d\n", write(sockfd, recv_buff, 1));
-  return 0;
+  //write file's data to the server
+  for(byte_index=0; byte_index<file_size; byte_index+=1024) {
+    if(file_size-byte_index < 1024)
+      buffer_size = file_size-byte_index;
+    if(read(fd, send_buff, buffer_size) < 0) {
+      perror("Error");
+      exit(1);
+    }
+    if(write(sockfd, send_buff, buffer_size) < 0) {
+      perror("Error");
+      exit(1);
+    }
+  }
+  //read the number of printable characters from the server
+  if(read(sockfd, &num_printable_characters_net, sizeof(uint64_t)) < 0) {
+    perror("Error");
+    exit(1);
+  }
+  close(sockfd);
+  num_printable_characters = ntohl(num_printable_characters_net);
+  printf("# of printable characters: %lu\n", num_printable_characters);
+  exit(0);
 }
