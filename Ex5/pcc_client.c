@@ -15,14 +15,13 @@
 int main(int argc, char *argv[])
 {
   int fd, sockfd, byte_index, buffer_size = 1024;
-  uint64_t file_size, file_size_net, num_printable_characters, num_printable_characters_net;
+  uint64_t file_size, file_size_net, total_pc, total_pc_net;
   char send_buff[1024];
   struct stat st;
   struct sockaddr_in serv_addr;
   //validate that the correct number of command line arguments id passed
-  if(argc != 3) {
-    errno = EINVAL;
-    perror("Error");
+  if(argc != 4) {
+    fprintf(stderr, "Error: invalid number of arguments\n");
     exit(1);
   }
   //validate that the file exists and readable
@@ -37,7 +36,8 @@ int main(int argc, char *argv[])
     perror("Error");
     exit(1);
   }
-  //ser server details
+  printf("socket success\n");
+  //set server details
   memset(&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port = htons(atoi(argv[2]));
@@ -47,8 +47,10 @@ int main(int argc, char *argv[])
     perror("Error");
     exit(1);
   }
+  printf("connect success\n");
   //get file's size
-  fstat(fd, &st);
+  stat(argv[3], &st);
+  printf("write file size: %lu\n", st.st_size);
   file_size = st.st_size;
   //write file's size to the server
   file_size_net = htonl(file_size);
@@ -56,8 +58,9 @@ int main(int argc, char *argv[])
     perror("Error");
     exit(1);
   }
+  printf("write file size: %lu\n", file_size);
   //write file's data to the server
-  for(byte_index=0; byte_index<file_size; byte_index+=1024) {
+  for(byte_index=0; byte_index<file_size; byte_index+=buffer_size) {
     if(file_size-byte_index < 1024)
       buffer_size = file_size-byte_index;
     if(read(fd, send_buff, buffer_size) < 0) {
@@ -69,13 +72,14 @@ int main(int argc, char *argv[])
       exit(1);
     }
   }
+  printf("finish write file. byte_index: %d", byte_index);
   //read the number of printable characters from the server
-  if(read(sockfd, &num_printable_characters_net, sizeof(uint64_t)) < 0) {
+  if(read(sockfd, &total_pc_net, sizeof(uint64_t)) < 0) {
     perror("Error");
     exit(1);
   }
   close(sockfd);
-  num_printable_characters = ntohl(num_printable_characters_net);
-  printf("# of printable characters: %lu\n", num_printable_characters);
+  total_pc = ntohl(total_pc_net);
+  printf("# of printable characters: %lu\n", total_pc);
   exit(0);
 }
