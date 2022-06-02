@@ -19,7 +19,6 @@ void close_server() {
   for(character_index=0; character_index < 95; character_index++) {
     printf("char '%c' : %lu times\n", character_index+32, pcc_total[character_index]);
   }
-
   exit(0);
 }
 
@@ -31,9 +30,10 @@ void sigint_handler() {
 
 int main(int argc, char *argv[])
 {
-  int listenfd, connfd, byte_index, file_index, buffer_size;
+  int listenfd, connfd, byte_index, file_index, buffer_size, rc, character_index;
   char recv_buff[1024];
   uint64_t file_size, file_size_net, total_pc, total_pc_net;
+  uint64_t pcc_total_per_conn[95];
   struct sockaddr_in serv_addr;
   struct sigaction sigint;
   //validate that the correct number of command line arguments id passed
@@ -81,6 +81,7 @@ int main(int argc, char *argv[])
 
   while(active_server) {
     //accept connection
+    printf("123456!");
     connfd = accept(listenfd, (struct sockaddr*) NULL, NULL);
     if(connfd < 0) {
       perror("Error");
@@ -89,40 +90,79 @@ int main(int argc, char *argv[])
     active_connection = 1;
     printf("accept connection\n");
     //read file's size from the client
-    if(read(connfd, &file_size_net, sizeof(uint64_t)) < 0) {
-      perror("Error");
-      exit(1);
+    rc = read(connfd, &file_size_net, sizeof(uint64_t));
+    if(rc <= 0) {
+      if((!rc) || errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
+        perror("Error");
+        close(connfd);
+        active_connection = 0;
+        continue;
+      }
+      else {
+        perror("Error");
+        exit(1);
+      }
     }
     file_size = ntohl(file_size_net);
     printf("read file size: %lu\n", file_size);
+    //reset statistics per connection (set all elements in pcc_total_per_conn to zero)
+    for(character_index=0; character_index < 95; character_index++) {
+      pcc_total_per_conn[character_index] = 0;
+    }
     //read file's data from the client
     buffer_size = 1024;
     total_pc = 0;
     for(file_index=0; file_index<file_size; file_index+=buffer_size) {
       if(file_size-file_index < 1024)
         buffer_size = file_size-file_index;
-      if(read(connfd, recv_buff, buffer_size) < 0) {
-        perror("Error");
-        exit(1);
+      rc = read(connfd, recv_buff, buffer_size);
+      if(rc <= 0) {
+        printf("rc: %d\n", rc);
+        if((!rc) || errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
+          perror("Error");
+          close(connfd);
+          active_connection = 0;
+          break;
+        }
+        else {
+          perror("Error");
+          exit(1);
+        }
       }
-      //calc total printable characters
+      //calc total printable characters per connection
       for(byte_index=0; byte_index<buffer_size; byte_index++) {
         if(32 <= recv_buff[byte_index] && recv_buff[byte_index] <= 126) {
           total_pc++;
-          pcc_total[(int)recv_buff[byte_index]-32]++;
+          pcc_total_per_conn[(int)recv_buff[byte_index]-32]++;
         }
       }
-    }    
+    }
+    //check if there was TCP connection error or unexpeted connection lost
+    if(rc <= 0)
+      continue;
     printf("finish write file. byte_index: %d", byte_index);
     //write total printable characters to the client
     total_pc_net = htonl(total_pc);
-    if(write(connfd, &total_pc_net, sizeof(uint64_t)) < 0) {
-      perror("Error");
-      exit(1);
+    rc = write(connfd, &total_pc_net, sizeof(uint64_t));
+    if(rc <= 0) {
+      if((!rc) || errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
+        perror("Error");
+        close(connfd);
+        active_connection = 0;
+        continue;
+      }
+      else {
+        perror("Error");
+        exit(1);
+      }
     }
     close(connfd);
     active_connection = 0;
     printf("write total pc: %lu\n", total_pc);
+    //calc total printable characters of all connections
+    for(character_index=0; character_index < 95; character_index++) {
+      pcc_total[character_index] += pcc_total_per_conn[character_index];
+    }
   }
   close_server();
 }
