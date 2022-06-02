@@ -60,7 +60,6 @@ int main(int argc, char *argv[])
     perror("Error");
     exit(1);
   }
-  printf("socket success\n");
   //set server details
   memset(&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
@@ -71,24 +70,20 @@ int main(int argc, char *argv[])
     perror("Error");
     exit(1);
   }
-  printf("bind success\n");
   //listen for connections
   if(0 != listen(listenfd, 10)) {
     perror("Error");
     exit(1);
   }
-  printf("listen success\n");
 
   while(active_server) {
     //accept connection
-    printf("123456!");
     connfd = accept(listenfd, (struct sockaddr*) NULL, NULL);
     if(connfd < 0) {
       perror("Error");
       exit(1);
     }
     active_connection = 1;
-    printf("accept connection\n");
     //read file's size from the client
     rc = read(connfd, &file_size_net, sizeof(uint64_t));
     if(rc <= 0) {
@@ -104,7 +99,6 @@ int main(int argc, char *argv[])
       }
     }
     file_size = ntohl(file_size_net);
-    printf("read file size: %lu\n", file_size);
     //reset statistics per connection (set all elements in pcc_total_per_conn to zero)
     for(character_index=0; character_index < 95; character_index++) {
       pcc_total_per_conn[character_index] = 0;
@@ -117,7 +111,6 @@ int main(int argc, char *argv[])
         buffer_size = file_size-file_index;
       rc = read(connfd, recv_buff, buffer_size);
       if(rc <= 0) {
-        printf("rc: %d\n", rc);
         if((!rc) || errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
           perror("Error");
           close(connfd);
@@ -140,7 +133,6 @@ int main(int argc, char *argv[])
     //check if there was TCP connection error or unexpeted connection lost
     if(rc <= 0)
       continue;
-    printf("finish write file. byte_index: %d", byte_index);
     //write total printable characters to the client
     total_pc_net = htonl(total_pc);
     rc = write(connfd, &total_pc_net, sizeof(uint64_t));
@@ -158,7 +150,6 @@ int main(int argc, char *argv[])
     }
     close(connfd);
     active_connection = 0;
-    printf("write total pc: %lu\n", total_pc);
     //calc total printable characters of all connections
     for(character_index=0; character_index < 95; character_index++) {
       pcc_total[character_index] += pcc_total_per_conn[character_index];
