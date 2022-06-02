@@ -26,7 +26,7 @@ debug_logger.addHandler(file_handler)
 debug_logger.setLevel(logging.DEBUG)
 debug_logger.propagate = False
 
-TIMEOUT_SECONDS = 20
+TIMEOUT_SECONDS = 200
 PFIND_EXEC = "./pfind"
 TEST_DIR = "test_filesystem"
 MAX_WORD_SIZE = 10
