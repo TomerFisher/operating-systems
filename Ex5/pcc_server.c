@@ -88,7 +88,8 @@ int main(int argc, char *argv[])
     rc = read(connfd, &file_size_net, sizeof(uint64_t));
     if(rc <= 0) {
       if((!rc) || errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
-        perror("Error");
+        if(rc < 0)
+          perror("Error");
         close(connfd);
         active_connection = 0;
         continue;
@@ -112,7 +113,8 @@ int main(int argc, char *argv[])
       rc = read(connfd, recv_buff, buffer_size);
       if(rc <= 0) {
         if((!rc) || errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
-          perror("Error");
+          if(rc < 0)
+            perror("Error");
           close(connfd);
           active_connection = 0;
           break;
@@ -138,7 +140,8 @@ int main(int argc, char *argv[])
     rc = write(connfd, &total_pc_net, sizeof(uint64_t));
     if(rc <= 0) {
       if((!rc) || errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE) {
-        perror("Error");
+        if(rc < 0)
+          perror("Error");
         close(connfd);
         active_connection = 0;
         continue;
